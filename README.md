@@ -10,5 +10,11 @@ To do list, and assignments:
         * warning sizes of colonies obtained!
         * One possibility is to directly use a smaller image at loading (but not for analyis?)
 - update todo list from Mathilde and Clément prvious discussions => (Clément)
+- allow the user to select the contrasting program (W)
+- allow the user to select the colony detection program (W)
+- auto detect the plate to minimize analysis time (W)
+- add a function to add centers without bothering with diameter (counts only) (W)
+- minimize manual analysis time by clever uploading of picture (compressed?) and clever refresh (B)
+- get better analysis for timelapse: edge detection from outside (B)
 
 Clément
