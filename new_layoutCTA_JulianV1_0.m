@@ -69,7 +69,13 @@ function new_layoutCTA
                 hs.FindCol=uix.HBox('Parent',hs.DetectTabBox);
                     hs.FindColonies=uicontrol('Parent',hs.FindCol, 'String', 'Find here', 'Callback', @FindColonies_Callback,'FontSize',15,'BackgroundColor', [0 0.5 0]);
                     hs.FindColoniesAll=uicontrol('Parent',hs.FindCol, 'String', 'All frames','Callback', @FindColoniesAll_Callback,'FontSize',15,'BackgroundColor', [0 0.5 0]); %timer is wrong
-                hs.Void=uix.Empty('Parent', hs.DetectTabBox);
+               
+                        hs.VoidDelimit=uix.Empty('Parent', hs.DetectTabBox);
+                hs.delimit=uix.HBox('Parent',hs.DetectTabBox);
+                    hs.delimitHere=uicontrol('Parent',hs.delimit, 'String', 'Delimit here', 'Callback', @DelimitArea_Callback,'FontSize',15,'BackgroundColor', [0 0.5 0]);
+                    hs.delimitAll=uicontrol('Parent',hs.delimit, 'String', 'Delimit all', 'Callback', @DelimitAreaAll_Callback,'FontSize',15,'BackgroundColor', [0 0.5 0]);
+               
+                    hs.Void=uix.Empty('Parent', hs.DetectTabBox);
                 hs.ManualCorrectStrg=uicontrol('Style', 'text','Parent',hs.DetectTabBox, 'String', {'';'Manual correction'},'FontSize',20);
                 hs.AddRmv=uix.HBox('Parent',hs.DetectTabBox);
                     hs.AddCol=uicontrol('Parent',hs.AddRmv, 'String', 'Add New (C)', 'Callback', @Addcol_callback,'FontSize',15,'BackgroundColor', [0 0.5 0]);
@@ -98,7 +104,7 @@ function new_layoutCTA
         hs.BottomLayer.Widths=[-1, -3];
         hs.LeftPan.Heights=[80,40,-8];
         hs.TimelapseTabBox.Heights=[-1 -1 -1 -1 -1 -4];
-        hs.DetectTabBox.Heights=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -3];
+        hs.DetectTabBox.Heights=[-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -3];
     end
     function initialize_gui
         
@@ -135,6 +141,11 @@ function new_layoutCTA
         p.RadMean2=[];
         p.Rad=[];
         
+        %delimit analysis area
+        p.DelimitBorders=[];
+        p.AAr=[];
+        p.AAc=[];
+        
         %for timelapse analysis
         p.Zonesize=1.2;
         p.percsizeMean=0.01;% total image area to define the zero
@@ -167,7 +178,7 @@ function new_layoutCTA
         %user to find a directory and calls the function loadDir
         
         %ask user for dir
-            dirUser=uigetdir(p.dir,'please select the directory with the files to correct');
+            dirUser=uigetdir(p.dir,'please select the directory with the timelapse images');
             if dirUser==0; return; end; %user cancelled
             p.dir=dirUser; %update p.dir
             if length(p.dir)>30
@@ -202,7 +213,7 @@ function new_layoutCTA
         end
         
         %loading previously saved data if existant
-        if ~isempty(dir([p.dir, '/', '*','all','*'])); %found a file countaing "all"
+        if ~isempty(dir([p.dir, '/', '*','all','*'])) %found a file countaing "all"
             try
                 files=dir([p.dir, '/', '*','all','*']);
                 fileAll=load([p.dir,'/',files(end).name]); %this contains, counts, i, Rad, RadMean, dir, minRad, maxRad and sensitivity
@@ -213,6 +224,8 @@ function new_layoutCTA
                 p.minRad=fileAll.minRad;
                 p.maxRad=fileAll.maxRad;
                 p.sensitivity=fileAll.sensitivity;
+                p.AAr=fileAll.AAr;
+                p.AAc=fileAll.AAc;
             catch
                 disp('did not find all files');
                 p.counts=cell(length(p.l),2); %creating empty cell with the nb of pictures
@@ -230,6 +243,12 @@ function new_layoutCTA
             p.countsload=load ([p.dir '/counts.mat']); %this file was produced when analysing
             p.counts=p.countsload.counts; %because load gives a struct object
             p.iold=1; %start from the start!
+        elseif exist([p.dir '/AAr.mat'], 'file')
+            p.AArload=load([p.dir '/AAr.mat']);
+            p.AAr=p.AArload.Aar;
+        elseif exist([p.dir '/AAc.mat'], 'file')
+            p.AAcload=load([p.dir '/AAc.mat']);
+            p.AAc=p.AAcload.Aac;
         else %nothing found
             p.counts=cell(length(p.l),2); %creating empty cell with the nb of pictures
             errorloading=0;
@@ -274,8 +293,21 @@ function new_layoutCTA
         % update image
         p.im=imshow(p.rgb,'InitialMagnification', 40); 
         
+        
+        %draw the circle for the analysis area
+       if ~isempty(p.AAc)
+           if size(p.AAc,1)==1 %only 1 AAc means time series. AA the same for all
+       viscircles(p.AAc,p.AAr, 'Color','b');
+           else
+               viscircles(p.AAc(p.i,:),p.AAr(p.i,:), 'Color','b'); % draw another AA circle for each frame
+           end
+       end
+        
+        
         if ~isempty(p.counts{p.i,1})
             viscircles(p.counts{p.i,1},p.counts{p.i,2}*p.apR,'Color','b'); %ploting with small diameter to enhance visualisation
+            
+            
         end
         
         p.NumCells=num2str(size(p.counts{p.i,2},1));
@@ -283,6 +315,7 @@ function new_layoutCTA
         % make sure the centers and radii variables are up to date (e.g. for start up)
         p.centers=p.counts{p.i,1};
         p.radii=p.counts{p.i,2}; %splitting in two variables
+        
         
         if p.overlayIMGstatus==1
             hold on;
@@ -354,19 +387,20 @@ function new_layoutCTA
         %create internal variables to be saved
         counts=p.counts; i=p.i; Rad=p.Rad; RadMean=p.RadMean;%#ok<NASGU>
         minRad=p.minRadN; maxRad=p.maxRadN; sensitivity=p.sensitivityN;dir=dirS; %#ok<NASGU>
-        
+        AAr=p.AAr; AAc=p.AAc;
         %Save separately
-        save([dirS '/sidesave.mat'],'counts'); save([dirS '/stoped_at.mat'],'i'); save([dirS '/Rad.mat'],'Rad'); save([dirS '/RadMean.mat'],'RadMean')
+        save([dirS '/sidesave.mat'],'counts'); save([dirS '/stoped_at.mat'],'i'); save([dirS '/Rad.mat'],'Rad'); save([dirS '/RadMean.mat'],'RadMean');
+        save([dirS '/AAr.mat'], 'AAr'); save([dirS '\AAc.mat'], 'AAc');
             % also with date to avoid too much loss in case of crash
         save([dirS '/' date 'sidesave.mat'],'counts'); save([dirS '/' date 'stoped_at.mat'],'i'); save([dirS '/' date 'Rad.mat'],'Rad'); 
-        
+        save([dirS '/' date 'AAr.mat'], 'AAr'); save([dirS '/' date 'AAc.mat'], 'AAc');
         % save whole file
         del=strfind(dirS,'/'); %looking for delimiter in folder name
         if isempty(del)
             del=strfind(dirS,'\'); %because windows and mac have different delimiters
         end
-        save([dirS dirS(del(end-1):del(end)-1) '_all.mat'], 'counts','i','dir', 'minRad','maxRad', 'sensitivity','RadMean','Rad') %consider replacing by save(p)
-        save([dirS dirS(del(end-1):del(end)-1) date '_all.mat'], 'counts','i','dir', 'minRad','maxRad', 'sensitivity','RadMean','Rad')
+        save([dirS dirS(del(end-1):del(end)-1) '_all.mat'], 'counts','i','dir', 'minRad','maxRad', 'sensitivity','RadMean','Rad','AAr','AAc') %consider replacing by save(p)
+        save([dirS dirS(del(end-1):del(end)-1) date '_all.mat'], 'counts','i','dir', 'minRad','maxRad', 'sensitivity','RadMean','Rad','AAr','AAc')
     end
     
 %% navigate and view images
@@ -452,7 +486,7 @@ function new_layoutCTA
         [X1, Y1] = ginput(1);
         hold on;
         h = plot(X1, Y1, 'r');
-        %get radius from a sencon click
+        %get radius from a second click
         set(gcf, 'WindowButtonMotionFcn', {@mousemove, h, [X1 Y1]}); %to have an updating circle
         k = waitforbuttonpress; %#ok<NASGU>
         set(gcf, 'WindowButtonMotionFcn', ''); %unlock the graph
@@ -538,6 +572,46 @@ function new_layoutCTA
     function Checkboxchange(~,~)
         p.overlayIMGstatus=~p.overlayIMGstatus;
         refresh(1)
+    end
+    function DelimitAreaAll_Callback(~,~)
+
+if sum(size(p.l))==0; errordlg('please load a image series'); return; end %the list doesn't exis
+
+% instructions to users
+        p.UserMess='Select three non-colinear points to delimit the petri dish surface';
+
+%get points
+[X, Y] = ginput(3);
+hold on;
+
+p.DelimitBorders=[X,Y];
+[R,xcyc] =fit_circle_through_3_points(p.DelimitBorders);
+C=[xcyc(1),xcyc(2)];
+p.AAc=C;
+p.AAr=R;
+refresh(1);
+
+    end%for timeseries: all AA the same
+
+    function DelimitArea_Callback(~,~) %for each frame a seperate AA created
+
+if sum(size(p.l))==0; errordlg('please load a image series'); return; end %the list doesn't exis
+
+% instructions to users
+        p.UserMess='Select three non-colinear points to delimit the petri dish surface';
+% p.AAc=cell.empty(length(p.l),2);
+% p.AAr=cell.empty(length(p.l),1);
+%get points
+[X, Y] = ginput(3);
+hold on;
+
+p.DelimitBorders=[X,Y];
+[R,xcyc] =fit_circle_through_3_points(p.DelimitBorders);
+C=[xcyc(1),xcyc(2)];
+p.AAc(p.i,:)=C;
+p.AAr(p.i,:)=R;
+refresh(1);
+
     end
 
 %% graphical interface functions
@@ -710,7 +784,8 @@ function new_layoutCTA
         tic
         FindColonies
         refresh(0);
-        p.UserMess.String=['took ',num2str(floor(toc)),' seconds for 1 frame']; drawnow
+        p.temp=toc;
+        hs.UserMess.String=['took ',num2str(floor(p.temp)),' seconds for 1 frame']; drawnow
     end
     function FindColoniesAll_Callback(~,~) % --- Executes on button press in AnalyseAllImages.
         
@@ -739,7 +814,8 @@ function new_layoutCTA
         %find circles
         hs.UserMess.String='calculating threshold...';drawnow
         
-        rgbT=midgrey(rgb, p.sauvolarange); %thresholding on the rgb image
+%         rgbT=midgrey(rgb, p.sauvolarange); %thresholding on the rgb image
+        rgbT=Sauvola(rgb(:,:,2),p.sauvolarange);
         
         hs.UserMess.String='searching for colonies...';drawnow
         
@@ -1038,6 +1114,65 @@ function new_layoutCTA
         end %over all colonies
     end
 
+    function [R,xcyc] = fit_circle_through_3_points(ABC)
+    % FIT_CIRCLE_THROUGH_3_POINTS
+    % Mathematical background is provided in http://www.regentsprep.org/regents/math/geometry/gcg6/RCir.htm
+    %
+    % Input:
+    %
+    %   ABC is a [3 x 2n] array. Each two columns represent a set of three points which lie on
+    %       a circle. Example: [-1 2;2 5;1 1] represents the set of points (-1,2), (2,5) and (1,1) in Cartesian
+    %       (x,y) coordinates.
+    %
+    % Outputs:
+    %
+    %   R     is a [1 x n] array of circle radii corresponding to each set of three points.
+    %   xcyc  is an [2 x n] array of of the centers of the circles, where each column is [xc_i;yc_i] where i
+    %         corresponds to the {A,B,C} set of points in the block [3 x 2i-1:2i] of ABC
+    %
+    % Author: Danylo Malyuta.
+    % Version: v1.0 (June 2016)
+    % ----------------------------------------------------------------------------------------------------------
+    % Each set of points {A,B,C} lies on a circle. Question: what is the circles radius and center?
+    % A: point with coordinates (x1,y1)
+    % B: point with coordinates (x2,y2)
+    % C: point with coordinates (x3,y3)
+    % ============= Find the slopes of the chord A<-->B (mr) and of the chord B<-->C (mt)
+    %   mt = (y3-y2)/(x3-x2)
+    %   mr = (y2-y1)/(x2-x1)
+    % /// Begin by generalizing xi and yi to arrays of individual xi and yi for each {A,B,C} set of points provided in ABC array
+    x1 = ABC(1,1:2:end);
+    x2 = ABC(2,1:2:end);
+    x3 = ABC(3,1:2:end);
+    y1 = ABC(1,2:2:end);
+    y2 = ABC(2,2:2:end);
+    y3 = ABC(3,2:2:end);
+    % /// Now carry out operations as usual, using array operations
+    mr = (y2-y1)./(x2-x1);
+    mt = (y3-y2)./(x3-x2);
+    % A couple of failure modes exist:
+    %   (1) First chord is vertical       ==> mr==Inf
+    %   (2) Second chord is vertical      ==> mt==Inf
+    %   (3) Points are collinear          ==> mt==mr (NB: NaN==NaN here)
+    %   (4) Two or more points coincident ==> mr==NaN || mt==NaN
+    % Resolve these failure modes case-by-case.
+    idf1 = isinf(mr); % Where failure mode (1) occurs
+    idf2 = isinf(mt); % Where failure mode (2) occurs
+    idf34 = isequaln(mr,mt) | isnan(mr) | isnan(mt); % Where failure modes (3) and (4) occur
+    % ============= Compute xc, the circle center x-coordinate
+    xcyc = (mr.*mt.*(y3-y1)+mr.*(x2+x3)-mt.*(x1+x2))./(2*(mr-mt));
+    xcyc(idf1) = (mt(idf1).*(y3(idf1)-y1(idf1))+(x2(idf1)+x3(idf1)))/2; % Failure mode (1) ==> use limit case of mr==Inf
+    xcyc(idf2) = ((x1(idf2)+x2(idf2))-mr(idf2).*(y3(idf2)-y1(idf2)))/2; % Failure mode (2) ==> use limit case of mt==Inf
+    xcyc(idf34) = NaN; % Failure mode (3) or (4) ==> cannot determine center point, return NaN
+    % ============= Compute yc, the circle center y-coordinate
+    xcyc(2,:) = -1./mr.*(xcyc-(x1+x2)/2)+(y1+y2)/2;
+    idmr0 = mr==0;
+    xcyc(2,idmr0) = -1./mt(idmr0).*(xcyc(idmr0)-(x2(idmr0)+x3(idmr0))/2)+(y2(idmr0)+y3(idmr0))/2;
+    xcyc(2,idf34) = NaN; % Failure mode (3) or (4) ==> cannot determine center point, return NaN
+    % ============= Compute the circle radius
+    R = sqrt((xcyc(1,:)-x1).^2+(xcyc(2,:)-y1).^2);
+    R(idf34) = Inf; % Failure mode (3) or (4) ==> assume circle radius infinite for this case
+    end % for AA delimit
 % further math functions for analysis
     function image=averagefilter(image, varargin)
         %AVERAGEFILTER 2-D mean filtering.
